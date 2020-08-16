@@ -7,6 +7,11 @@ import (
 	"sync"
 )
 
+type MetricGroup struct {
+	Labels  []string
+	Metrics map[string]*MetricDesc
+}
+
 type MetricDesc struct {
 	Type prometheus.ValueType
 	Desc prometheus.Desc
@@ -21,18 +26,25 @@ type Collector struct {
 	totalScrapes prometheus.Counter
 
 	// metrics
-	namespace             string
-	metricDescMapInternal map[string]*MetricDesc
-	metricDescMapList     map[string]*MetricDesc
+	namespace            string
+	metricGroupLists     *MetricGroup
+	metricGroupStats     *MetricGroup
+	metricGroupPools     *MetricGroup
+	metricGroupDatabases *MetricGroup
+	metricGroupConfig    *MetricGroup
 }
 
 func NewCollector(db *sql.DB, namespace string) *Collector {
 	return &Collector{
-		db:                db,
-		namespace:         namespace,
-		up:                buildGauge(InternalMetricUp),
-		totalScrapes:      buildCounter(InternalMetricScrapeTotal),
-		metricDescMapList: buildMetricDescMapList(),
+		db:                   db,
+		namespace:            namespace,
+		up:                   buildGauge(InternalMetricUp),
+		totalScrapes:         buildCounter(InternalMetricScrapeTotal),
+		metricGroupLists:     buildMetricGroup(MetricDescriptorLists),
+		metricGroupStats:     buildMetricGroup(MetricDescriptorStats),
+		metricGroupPools:     buildMetricGroup(MetricDescriptorPools),
+		metricGroupDatabases: buildMetricGroup(MetricDescriptorDatabases),
+		metricGroupConfig:    buildMetricGroup(MetricDescriptorConfig),
 	}
 }
 
@@ -71,20 +83,77 @@ func (c *Collector) scrape(ch chan<- prometheus.Metric) {
 	c.up.Set(1)
 	c.totalScrapes.Inc()
 
-	if err := c.scrapeLists(ch); err != nil {
-		c.up.Set(0)
+	metrics, err := c.extractMetrics("SHOW LISTS;", c.metricGroupLists, c.extractKeyValue)
+	if err = c.handleExtractedMetrics(ch, metrics, err); err != nil {
+		return
+	}
+
+	metrics, err = c.extractMetrics("SHOW STATS;", c.metricGroupStats, c.extractWithLabels)
+	if err = c.handleExtractedMetrics(ch, metrics, err); err != nil {
+		return
+	}
+
+	metrics, err = c.extractMetrics("SHOW POOLS;", c.metricGroupPools, c.extractWithLabels)
+	if err = c.handleExtractedMetrics(ch, metrics, err); err != nil {
+		return
+	}
+
+	metrics, err = c.extractMetrics("SHOW DATABASES;", c.metricGroupDatabases, c.extractWithLabels)
+	if err = c.handleExtractedMetrics(ch, metrics, err); err != nil {
+		return
 	}
 }
 
-func (c *Collector) scrapeLists(ch chan<- prometheus.Metric) error {
-	rows, err := c.db.Query(`SHOW LISTS;`)
+func (c *Collector) handleExtractedMetrics(ch chan<- prometheus.Metric, metrics []prometheus.Metric, err error) error {
 	if err != nil {
+		c.up.Set(0)
 		return err
+	}
+	for _, m := range metrics {
+		ch <- m
+	}
+	return nil
+}
+
+type ExtractFunc func(metricGroup *MetricGroup, columns []string, columnData []interface{}) []prometheus.Metric
+
+func (c *Collector) extractKeyValue(metricGroup *MetricGroup, columns []string, columnData []interface{}) []prometheus.Metric {
+	var result []prometheus.Metric
+	metricValue := Cast2Float64(columnData[1])
+	metricDesc := metricGroup.Metrics[Cast2string(columnData[0])]
+	if metricDesc != nil {
+		result = append(result, prometheus.MustNewConstMetric(&metricDesc.Desc, metricDesc.Type, metricValue))
+	}
+	return result
+}
+
+func (c *Collector) extractWithLabels(metricGroup *MetricGroup, columns []string, columnData []interface{}) []prometheus.Metric {
+	var result []prometheus.Metric
+	var labelValues []string
+
+	for i, colName := range columns {
+		if Contains(metricGroup.Labels, colName) {
+			labelValues = append(labelValues, Cast2string(columnData[i]))
+			continue
+		}
+		metricDesc := metricGroup.Metrics[colName]
+		if metricDesc != nil {
+			metricValue := Cast2Float64(columnData[i])
+			result = append(result, prometheus.MustNewConstMetric(&metricDesc.Desc, metricDesc.Type, metricValue, labelValues...))
+		}
+	}
+	return result
+}
+
+func (c *Collector) extractMetrics(query string, metricGroup *MetricGroup, extractFunc ExtractFunc) ([]prometheus.Metric, error) {
+	rows, err := c.db.Query(query)
+	if err != nil {
+		return nil, err
 	}
 	defer rows.Close()
 
-	p, _ := rows.Columns()
-	nColumn := len(p)
+	columns, _ := rows.Columns()
+	nColumn := len(columns)
 
 	columnData := make([]interface{}, nColumn)
 	scanArgs := make([]interface{}, nColumn)
@@ -92,34 +161,32 @@ func (c *Collector) scrapeLists(ch chan<- prometheus.Metric) error {
 		scanArgs[i] = &columnData[i]
 	}
 
-	listResult := make(map[string]float64)
+	var resultMetrics []prometheus.Metric
 	for rows.Next() {
 		if err = rows.Scan(scanArgs...); err != nil {
-			return err
+			return nil, err
 		}
-		listResult[Cast2string(columnData[0])] = Cast2Float64(columnData[1])
+
+		metrics := extractFunc(metricGroup, columns, columnData)
+		resultMetrics = append(resultMetrics, metrics...)
 	}
 
-	for k, v := range listResult {
-		metricDesc := c.metricDescMapList[k]
-		if metricDesc != nil {
-			ch <- prometheus.MustNewConstMetric(&metricDesc.Desc, metricDesc.Type, v)
-		}
-	}
-	return nil
+	return resultMetrics, nil
 }
 
-func buildMetricDescMapList() map[string]*MetricDesc {
-	prefix := "lists"
+func buildMetricGroup(descriptor MetricDescriptor) *MetricGroup {
 	m := make(map[string]*MetricDesc)
 
-	for _, v := range MetricPropsList {
+	for _, v := range descriptor.MetricProps {
 		m[v.Name] = &MetricDesc{
 			Type: v.Type,
-			Desc: *prometheus.NewDesc(fmt.Sprintf("%s_%s_%s", namespace, prefix, v.Name), v.Help, nil, nil),
+			Desc: *prometheus.NewDesc(fmt.Sprintf("%s_%s_%s", namespace, descriptor.Prefix, v.Name), v.Help, descriptor.Labels, nil),
 		}
 	}
-	return m
+	return &MetricGroup{
+		Labels:  descriptor.Labels,
+		Metrics: m,
+	}
 }
 
 func buildGauge(props MetricProps) prometheus.Gauge {

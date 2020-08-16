@@ -67,3 +67,12 @@ func Cast2string(t interface{}) string {
 		return ""
 	}
 }
+
+func Contains(arr []string, x string) bool {
+	for _, n := range arr {
+		if x == n {
+			return true
+		}
+	}
+	return false
+}
