@@ -2,19 +2,25 @@ package main
 
 import (
 	"database/sql"
+	"flag"
 	"fmt"
 	"github.com/lib/pq"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"log"
 	"net"
 	"net/http"
+	"os"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+var (
+	metricsPort    string
+	dataSourceName string
+)
+
 const (
 	metricsHost = "0.0.0.0"
-	metricsPort = 8989
 	metricsPath = "/metrics"
 	healthzPath = "/healthz"
 	namespace   = "pgbouncer"
@@ -31,9 +37,23 @@ const (
 	</html>`
 )
 
+func ParseEnv() {
+	if dsn := os.Getenv("DATA_SOURCE_NAME"); len(dsn) != 0 {
+		dataSourceName = dsn
+	}
+	if port := os.Getenv("PGB_EXPORTER_WEB_LISTEN_PORT"); len(port) != 0 {
+		metricsPort = port
+	}
+}
+
 func main() {
+	flag.StringVar(&metricsPort, "p", "8989", "Port to listen on for web interface and telemetry")
+	flag.StringVar(&dataSourceName, "d", "postgres://pgbouncer:@localhost:6432/pgbouncer?sslmode=disable", "pgbouncer connection url")
+	flag.Parse()
+	ParseEnv()
+
 	// Connect to pgbouncer
-	db, err := Connect("postgres://postgres:@localhost:6543/pgbouncer?sslmode=disable")
+	db, err := Connect(dataSourceName)
 	if err != nil {
 		log.Fatal("Failed to connect to pgbouncer", err)
 	}

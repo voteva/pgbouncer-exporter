@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/log"
 	"sync"
 )
 
@@ -85,21 +86,31 @@ func (c *Collector) scrape(ch chan<- prometheus.Metric) {
 
 	metrics, err := c.extractMetrics("SHOW LISTS;", c.metricGroupLists, c.extractKeyValue)
 	if err = c.handleExtractedMetrics(ch, metrics, err); err != nil {
+		log.Error(err, "Failed to extract metrics LISTS")
 		return
 	}
 
 	metrics, err = c.extractMetrics("SHOW STATS;", c.metricGroupStats, c.extractWithLabels)
 	if err = c.handleExtractedMetrics(ch, metrics, err); err != nil {
+		log.Error(err, "Failed to extract metrics STATS")
 		return
 	}
 
 	metrics, err = c.extractMetrics("SHOW POOLS;", c.metricGroupPools, c.extractWithLabels)
 	if err = c.handleExtractedMetrics(ch, metrics, err); err != nil {
+		log.Error(err, "Failed to extract metrics POOLS")
 		return
 	}
 
 	metrics, err = c.extractMetrics("SHOW DATABASES;", c.metricGroupDatabases, c.extractWithLabels)
 	if err = c.handleExtractedMetrics(ch, metrics, err); err != nil {
+		log.Error(err, "Failed to extract metrics DATABASES")
+		return
+	}
+
+	metrics, err = c.extractMetrics("SHOW CONFIG;", c.metricGroupConfig, c.extractKeyValue)
+	if err = c.handleExtractedMetrics(ch, metrics, err); err != nil {
+		log.Error(err, "Failed to extract metrics CONFIG")
 		return
 	}
 }
