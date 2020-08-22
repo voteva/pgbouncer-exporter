@@ -1,10 +1,47 @@
 package main
 
 import (
+	"database/sql"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"testing"
 )
+
+type MockDB struct{}
+
+// Implement the SQLDB interface
+func (mdb *MockDB) Query(query string, args ...interface{}) (*sql.Rows, error) {
+	rows := &sql.Rows{
+
+	}
+	return rows, nil
+}
+
+// Implement the SQLDB interface
+func (mdb *MockDB) Close() error {
+	return nil
+}
+
+//func Test_ExtractMetrics(t *testing.T) {
+//	t.Parallel()
+//	a := assert.New(t)
+//
+//	t.Run("extract metrics", func(t *testing.T) {
+//		c := Collector{
+//			db: &MockDB{},
+//		}
+//
+//		metricGroup := &MetricGroup{
+//			Labels:  []string{},
+//			Metrics: make(map[string]*MetricDesc),
+//		}
+//
+//		actualResult, err := c.extractMetrics(BuildRandomString(1), metricGroup, c.extractKeyValue)
+//
+//		a.Nil(err)
+//		a.NotNil(actualResult)
+//	})
+//}
 
 func Test_BuildMetricGroup(t *testing.T) {
 	t.Parallel()

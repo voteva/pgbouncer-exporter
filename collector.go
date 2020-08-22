@@ -1,11 +1,11 @@
 package main
 
 import (
-	"database/sql"
 	"fmt"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"sync"
+	"time"
 )
 
 type MetricGroup struct {
@@ -19,12 +19,13 @@ type MetricDesc struct {
 }
 
 type Collector struct {
-	db *sql.DB
+	db SQLDB
 	rw sync.Mutex
 
 	// internal state
-	up           prometheus.Gauge
-	totalScrapes prometheus.Counter
+	up             prometheus.Gauge
+	scrapeLastTime prometheus.Gauge
+	totalScrapes   prometheus.Counter
 
 	// metrics
 	namespace            string
@@ -35,11 +36,12 @@ type Collector struct {
 	metricGroupConfig    *MetricGroup
 }
 
-func NewCollector(db *sql.DB, namespace string) *Collector {
+func NewCollector(db SQLDB, namespace string) *Collector {
 	return &Collector{
 		db:                   db,
 		namespace:            namespace,
 		up:                   prometheus.NewGauge(buildGaugeOpts(InternalMetricUp)),
+		scrapeLastTime:       prometheus.NewGauge(buildGaugeOpts(InternalMetricScrapeLastTime)),
 		totalScrapes:         prometheus.NewCounter(buildCounterOpts(InternalMetricScrapeTotal)),
 		metricGroupLists:     buildMetricGroup(MetricDescriptorLists),
 		metricGroupStats:     buildMetricGroup(MetricDescriptorStats),
@@ -74,6 +76,7 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) {
 func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 	c.scrape(ch)
 	ch <- c.up
+	ch <- c.scrapeLastTime
 	ch <- c.totalScrapes
 }
 
@@ -82,6 +85,7 @@ func (c *Collector) scrape(ch chan<- prometheus.Metric) {
 	defer c.rw.Unlock()
 
 	c.up.Set(1)
+	c.scrapeLastTime.Set(Cast2Float64(time.Now()))
 	c.totalScrapes.Inc()
 
 	metrics, err := c.extractMetrics("SHOW LISTS;", c.metricGroupLists, c.extractKeyValue)
@@ -142,9 +146,16 @@ func (c *Collector) extractWithLabels(metricGroup *MetricGroup, columns []string
 	var result []prometheus.Metric
 	var labelValues []string
 
+	// collect labels
 	for i, colName := range columns {
 		if Contains(metricGroup.Labels, colName) {
 			labelValues = append(labelValues, Cast2string(columnData[i]))
+			continue
+		}
+	}
+	// collect metrics
+	for i, colName := range columns {
+		if Contains(metricGroup.Labels, colName) {
 			continue
 		}
 		metricDesc := metricGroup.Metrics[colName]

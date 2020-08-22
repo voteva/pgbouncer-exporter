@@ -1,10 +1,8 @@
 package main
 
 import (
-	"database/sql"
 	"flag"
 	"fmt"
-	"github.com/lib/pq"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"log"
 	"net"
@@ -86,17 +84,4 @@ func main() {
 	})
 	err = http.ListenAndServe(listenAddress, mux)
 	log.Fatal(err, "Failed to serve metrics")
-}
-
-func Connect(conn string) (*sql.DB, error) {
-	connector, err := pq.NewConnector(conn)
-	if err != nil {
-		return nil, err
-	}
-	db := sql.OpenDB(connector)
-
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
-
-	return db, nil
 }
