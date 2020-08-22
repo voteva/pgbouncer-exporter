@@ -3,9 +3,22 @@ package main
 import (
 	"fmt"
 	"math"
+	"math/rand"
 	"strconv"
 	"time"
 )
+
+const charset = "abcdefghijklmnopqrstuvwxyz"
+
+var seededRand = rand.New(rand.NewSource(time.Now().UnixNano()))
+
+func BuildRandomString(length int) string {
+	b := make([]byte, length)
+	for i := range b {
+		b[i] = charset[seededRand.Intn(len(charset))]
+	}
+	return string(b)
+}
 
 // Cast2Float64 cast database driver interface{} to float64
 func Cast2Float64(t interface{}) float64 {

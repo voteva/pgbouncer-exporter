@@ -39,8 +39,8 @@ func NewCollector(db *sql.DB, namespace string) *Collector {
 	return &Collector{
 		db:                   db,
 		namespace:            namespace,
-		up:                   buildGauge(InternalMetricUp),
-		totalScrapes:         buildCounter(InternalMetricScrapeTotal),
+		up:                   prometheus.NewGauge(buildGaugeOpts(InternalMetricUp)),
+		totalScrapes:         prometheus.NewCounter(buildCounterOpts(InternalMetricScrapeTotal)),
 		metricGroupLists:     buildMetricGroup(MetricDescriptorLists),
 		metricGroupStats:     buildMetricGroup(MetricDescriptorStats),
 		metricGroupPools:     buildMetricGroup(MetricDescriptorPools),
@@ -200,18 +200,18 @@ func buildMetricGroup(descriptor MetricDescriptor) *MetricGroup {
 	}
 }
 
-func buildGauge(props MetricProps) prometheus.Gauge {
-	return prometheus.NewGauge(prometheus.GaugeOpts{
+func buildGaugeOpts(props MetricProps) prometheus.GaugeOpts {
+	return prometheus.GaugeOpts{
 		Namespace: namespace,
 		Name:      props.Name,
 		Help:      props.Help,
-	})
+	}
 }
 
-func buildCounter(props MetricProps) prometheus.Counter {
-	return prometheus.NewCounter(prometheus.CounterOpts{
+func buildCounterOpts(props MetricProps) prometheus.CounterOpts {
+	return prometheus.CounterOpts{
 		Namespace: namespace,
 		Name:      props.Name,
 		Help:      props.Help,
-	})
+	}
 }
