@@ -1,6 +1,6 @@
 build:
 	mkdir -p bin
-	go build -o bin/pgbouncer-exporter pgbouncer-exporter
+	go build -o bin/pgbouncer-exporter github.com/voteva/pgbouncer-exporter
 
 clean:
 	rm -rf bin
