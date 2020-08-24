@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+const MaxErrors = 5
+
 type MetricGroup struct {
 	Labels  []string
 	Metrics map[string]*MetricDesc
@@ -24,6 +26,7 @@ type Collector struct {
 
 	// internal state
 	up             prometheus.Gauge
+	errors         prometheus.Gauge
 	scrapeLastTime prometheus.Gauge
 	totalScrapes   prometheus.Counter
 
@@ -41,6 +44,7 @@ func NewCollector(db SQLDB, namespace string) *Collector {
 		db:                   db,
 		namespace:            namespace,
 		up:                   prometheus.NewGauge(buildGaugeOpts(InternalMetricUp)),
+		errors:               prometheus.NewGauge(buildGaugeOpts(InternalMetricErrors)),
 		scrapeLastTime:       prometheus.NewGauge(buildGaugeOpts(InternalMetricScrapeLastTime)),
 		totalScrapes:         prometheus.NewCounter(buildCounterOpts(InternalMetricScrapeTotal)),
 		metricGroupLists:     buildMetricGroup(MetricDescriptorLists),
@@ -76,6 +80,7 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) {
 func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 	c.scrape(ch)
 	ch <- c.up
+	ch <- c.errors
 	ch <- c.scrapeLastTime
 	ch <- c.totalScrapes
 }
@@ -84,38 +89,44 @@ func (c *Collector) scrape(ch chan<- prometheus.Metric) {
 	c.rw.Lock()
 	defer c.rw.Unlock()
 
+	errors := 0
 	c.up.Set(1)
 	c.scrapeLastTime.Set(Cast2Float64(time.Now()))
 	c.totalScrapes.Inc()
 
-	metrics, err := c.extractMetrics("SHOW LISTS;", c.metricGroupLists, c.extractKeyValue)
+	metrics, err := c.extractMetrics("SHOW LISTS;", c.metricGroupLists, extractKeyValue)
 	if err = c.handleExtractedMetrics(ch, metrics, err); err != nil {
-		log.Error(err, "Failed to extract metrics LISTS")
-		return
+		log.Error("Failed to extract metrics LISTS: ", err)
+		errors++
 	}
 
-	metrics, err = c.extractMetrics("SHOW STATS;", c.metricGroupStats, c.extractWithLabels)
+	metrics, err = c.extractMetrics("SHOW STATS;", c.metricGroupStats, extractWithLabels)
 	if err = c.handleExtractedMetrics(ch, metrics, err); err != nil {
-		log.Error(err, "Failed to extract metrics STATS")
-		return
+		log.Error("Failed to extract metrics STATS: ", err)
+		errors++
 	}
 
-	metrics, err = c.extractMetrics("SHOW POOLS;", c.metricGroupPools, c.extractWithLabels)
+	metrics, err = c.extractMetrics("SHOW POOLS;", c.metricGroupPools, extractWithLabels)
 	if err = c.handleExtractedMetrics(ch, metrics, err); err != nil {
-		log.Error(err, "Failed to extract metrics POOLS")
-		return
+		log.Error("Failed to extract metrics POOLS: ", err)
+		errors++
 	}
 
-	metrics, err = c.extractMetrics("SHOW DATABASES;", c.metricGroupDatabases, c.extractWithLabels)
+	metrics, err = c.extractMetrics("SHOW DATABASES;", c.metricGroupDatabases, extractWithLabels)
 	if err = c.handleExtractedMetrics(ch, metrics, err); err != nil {
-		log.Error(err, "Failed to extract metrics DATABASES")
-		return
+		log.Error("Failed to extract metrics DATABASES: ", err)
+		errors++
 	}
 
-	metrics, err = c.extractMetrics("SHOW CONFIG;", c.metricGroupConfig, c.extractKeyValue)
+	metrics, err = c.extractMetrics("SHOW CONFIG;", c.metricGroupConfig, extractKeyValue)
 	if err = c.handleExtractedMetrics(ch, metrics, err); err != nil {
-		log.Error(err, "Failed to extract metrics CONFIG")
-		return
+		log.Error("Failed to extract metrics CONFIG: ", err)
+		errors++
+	}
+
+	c.errors.Set(float64(errors))
+	if errors >= MaxErrors {
+		c.up.Set(0)
 	}
 }
 
@@ -128,43 +139,6 @@ func (c *Collector) handleExtractedMetrics(ch chan<- prometheus.Metric, metrics 
 		ch <- m
 	}
 	return nil
-}
-
-type ExtractFunc func(metricGroup *MetricGroup, columns []string, columnData []interface{}) []prometheus.Metric
-
-func (c *Collector) extractKeyValue(metricGroup *MetricGroup, columns []string, columnData []interface{}) []prometheus.Metric {
-	var result []prometheus.Metric
-	metricValue := Cast2Float64(columnData[1])
-	metricDesc := metricGroup.Metrics[Cast2string(columnData[0])]
-	if metricDesc != nil {
-		result = append(result, prometheus.MustNewConstMetric(&metricDesc.Desc, metricDesc.Type, metricValue))
-	}
-	return result
-}
-
-func (c *Collector) extractWithLabels(metricGroup *MetricGroup, columns []string, columnData []interface{}) []prometheus.Metric {
-	var result []prometheus.Metric
-	var labelValues []string
-
-	// collect labels
-	for i, colName := range columns {
-		if Contains(metricGroup.Labels, colName) {
-			labelValues = append(labelValues, Cast2string(columnData[i]))
-			continue
-		}
-	}
-	// collect metrics
-	for i, colName := range columns {
-		if Contains(metricGroup.Labels, colName) {
-			continue
-		}
-		metricDesc := metricGroup.Metrics[colName]
-		if metricDesc != nil {
-			metricValue := Cast2Float64(columnData[i])
-			result = append(result, prometheus.MustNewConstMetric(&metricDesc.Desc, metricDesc.Type, metricValue, labelValues...))
-		}
-	}
-	return result
 }
 
 func (c *Collector) extractMetrics(query string, metricGroup *MetricGroup, extractFunc ExtractFunc) ([]prometheus.Metric, error) {
@@ -194,6 +168,43 @@ func (c *Collector) extractMetrics(query string, metricGroup *MetricGroup, extra
 	}
 
 	return resultMetrics, nil
+}
+
+type ExtractFunc func(metricGroup *MetricGroup, columns []string, columnData []interface{}) []prometheus.Metric
+
+func extractKeyValue(metricGroup *MetricGroup, columns []string, columnData []interface{}) []prometheus.Metric {
+	var result []prometheus.Metric
+	metricValue := Cast2Float64(columnData[1])
+	metricDesc := metricGroup.Metrics[Cast2string(columnData[0])]
+	if metricDesc != nil {
+		result = append(result, prometheus.MustNewConstMetric(&metricDesc.Desc, metricDesc.Type, metricValue))
+	}
+	return result
+}
+
+func extractWithLabels(metricGroup *MetricGroup, columns []string, columnData []interface{}) []prometheus.Metric {
+	var result []prometheus.Metric
+	var labelValues []string
+
+	// collect labels
+	for i, colName := range columns {
+		if Contains(metricGroup.Labels, colName) {
+			labelValues = append(labelValues, Cast2string(columnData[i]))
+			continue
+		}
+	}
+	// collect metrics
+	for i, colName := range columns {
+		if Contains(metricGroup.Labels, colName) {
+			continue
+		}
+		metricDesc := metricGroup.Metrics[colName]
+		if metricDesc != nil {
+			metricValue := Cast2Float64(columnData[i])
+			result = append(result, prometheus.MustNewConstMetric(&metricDesc.Desc, metricDesc.Type, metricValue, labelValues...))
+		}
+	}
+	return result
 }
 
 func buildMetricGroup(descriptor MetricDescriptor) *MetricGroup {

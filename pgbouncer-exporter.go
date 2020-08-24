@@ -46,14 +46,14 @@ func ParseEnv() {
 
 func main() {
 	flag.StringVar(&metricsPort, "p", "8989", "Port to listen on for web interface and telemetry")
-	flag.StringVar(&dataSourceName, "d", "postgres://pgbouncer:@localhost:6432/pgbouncer?sslmode=disable", "pgbouncer connection url")
+	flag.StringVar(&dataSourceName, "d", "postgres://pgbouncer:@localhost:6432/pgbouncer?sslmode=disable", "PgBouncer connection url")
 	flag.Parse()
 	ParseEnv()
 
 	// Connect to pgbouncer
 	db, err := Connect(dataSourceName)
 	if err != nil {
-		log.Fatal("Failed to connect to pgbouncer", err)
+		log.Fatal("Failed to connect to PgBouncer: ", err)
 	}
 
 	// Create new collector
@@ -66,22 +66,26 @@ func main() {
 
 	listenAddress := net.JoinHostPort(metricsHost, fmt.Sprint(metricsPort))
 	mux := http.NewServeMux()
+
 	// Add metricsPath
 	mux.Handle(metricsPath, promhttp.HandlerFor(r, promhttp.HandlerOpts{}))
+
 	// Add healthzPath
 	mux.HandleFunc(healthzPath, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
 		if _, err := w.Write([]byte("ok")); err != nil {
-			log.Fatal(err, "Unable to write to serve metrics")
+			log.Fatal("Unable to write to serve metrics: ", err)
 		}
 	})
+
 	// Add index
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		_, err := w.Write([]byte(indexHTML))
 		if err != nil {
-			log.Fatal(err, "Unable to write to serve metrics")
+			log.Fatal("Unable to write to serve metrics: ", err)
 		}
 	})
+
 	err = http.ListenAndServe(listenAddress, mux)
-	log.Fatal(err, "Failed to serve metrics")
+	log.Fatal("Failed to serve metrics: ", err)
 }

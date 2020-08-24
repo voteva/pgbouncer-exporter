@@ -18,6 +18,10 @@ var InternalMetricUp = MetricProps{
 	Type: prometheus.GaugeValue, Name: "up", Help: "Whether pgbouncer is alive",
 }
 
+var InternalMetricErrors = MetricProps{
+	Type: prometheus.GaugeValue, Name: "errors", Help: "Errors per scrape",
+}
+
 var InternalMetricScrapeLastTime = MetricProps{
 	Type: prometheus.GaugeValue, Name: "scrape_last_time", Help: "Last timestamp of scrape in unix epoch",
 }
