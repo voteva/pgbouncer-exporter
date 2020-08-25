@@ -132,7 +132,6 @@ func (c *Collector) scrape(ch chan<- prometheus.Metric) {
 
 func (c *Collector) handleExtractedMetrics(ch chan<- prometheus.Metric, metrics []prometheus.Metric, err error) error {
 	if err != nil {
-		c.up.Set(0)
 		return err
 	}
 	for _, m := range metrics {
