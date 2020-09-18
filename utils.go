@@ -7,8 +7,8 @@ import (
 	"time"
 )
 
-// Cast2Float64 cast database driver interface{} to float64
-func Cast2Float64(t interface{}, factor float64) float64 {
+// cast2Float64 cast database driver interface{} to float64
+func cast2Float64(t interface{}, factor float64) float64 {
 	switch v := t.(type) {
 	case int64:
 		return float64(v) * factor
@@ -43,8 +43,8 @@ func Cast2Float64(t interface{}, factor float64) float64 {
 	}
 }
 
-// Cast2Float64 cast database driver interface{} to string
-func Cast2string(t interface{}) string {
+// cast2Float64 cast database driver interface{} to string
+func cast2string(t interface{}) string {
 	switch v := t.(type) {
 	case int64:
 		return fmt.Sprintf("%v", v)
@@ -68,7 +68,7 @@ func Cast2string(t interface{}) string {
 	}
 }
 
-func Contains(arr []string, x string) bool {
+func contains(arr []string, x string) bool {
 	for _, n := range arr {
 		if x == n {
 			return true

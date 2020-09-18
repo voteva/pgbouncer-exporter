@@ -17,13 +17,13 @@ import (
 var (
 	metricsPort    string
 	dataSourceName string
+	namespace      string
 )
 
 const (
 	metricsHost = "0.0.0.0"
 	metricsPath = "/metrics"
 	healthzPath = "/healthz"
-	namespace   = "pgbouncer"
 	indexHTML   = `
 	<html>
 		<head><title>PgBouncer Metrics Exporter</title></head>
@@ -41,14 +41,18 @@ func ParseEnv() {
 	if dsn := os.Getenv("DATA_SOURCE_NAME"); len(dsn) != 0 {
 		dataSourceName = dsn
 	}
-	if port := os.Getenv("PGB_EXPORTER_WEB_LISTEN_PORT"); len(port) != 0 {
+	if port := os.Getenv("EXPORTER_WEB_LISTEN_PORT"); len(port) != 0 {
 		metricsPort = port
+	}
+	if ns := os.Getenv("EXPORTER_NAMESPACE"); len(ns) != 0 {
+		namespace = ns
 	}
 }
 
 func main() {
 	flag.StringVar(&metricsPort, "p", "9127", "Port to listen on for web interface and telemetry")
 	flag.StringVar(&dataSourceName, "d", "postgres://pgbouncer:@localhost:6432/pgbouncer?sslmode=disable", "PgBouncer connection url")
+	flag.StringVar(&namespace, "ns", "pgbouncer", "Namespace for exporter")
 	flag.Parse()
 	ParseEnv()
 
