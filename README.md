@@ -16,10 +16,10 @@ docker build -t pgbouncer-exporter .
 
 ## Run
 ```
-pgbouncer-exporter [-p <telemetry port>] [-d <data source>] [-d <namespace>]
+pgbouncer-exporter [-p <telemetry port>] [-d <data source>] [-ns <namespace>]
 ```
 
-## Flags
+### Flags
 * ``` -p ```  - Port to listen on for web interface and telemetry
 * ``` -d ```  - PgBouncer connection url (Odyssey url)
 * ``` -ns ``` - Namespace, metrics name prefix (default pgbouncer)
