@@ -9,9 +9,10 @@ type MetricDescriptor struct {
 }
 
 type MetricProps struct {
-	Type prometheus.ValueType
-	Name string
-	Help string
+	Type   prometheus.ValueType
+	Factor float64
+	Name   string
+	Help   string
 }
 
 var InternalMetricUp = MetricProps{

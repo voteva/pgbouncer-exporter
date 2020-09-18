@@ -3,30 +3,17 @@ package main
 import (
 	"fmt"
 	"math"
-	"math/rand"
 	"strconv"
 	"time"
 )
 
-const charset = "abcdefghijklmnopqrstuvwxyz"
-
-var seededRand = rand.New(rand.NewSource(time.Now().UnixNano()))
-
-func BuildRandomString(length int) string {
-	b := make([]byte, length)
-	for i := range b {
-		b[i] = charset[seededRand.Intn(len(charset))]
-	}
-	return string(b)
-}
-
 // Cast2Float64 cast database driver interface{} to float64
-func Cast2Float64(t interface{}) float64 {
+func Cast2Float64(t interface{}, factor float64) float64 {
 	switch v := t.(type) {
 	case int64:
-		return float64(v)
+		return float64(v) * factor
 	case float64:
-		return v
+		return v * factor
 	case time.Time:
 		return float64(v.Unix())
 	case time.Duration:
@@ -37,13 +24,13 @@ func Cast2Float64(t interface{}) float64 {
 		if err != nil {
 			return math.NaN()
 		}
-		return result
+		return result * factor
 	case string:
 		result, err := strconv.ParseFloat(v, 64)
 		if err != nil {
 			return math.NaN()
 		}
-		return result
+		return result * factor
 	case bool:
 		if v {
 			return 1.0

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
@@ -16,12 +17,13 @@ type MetricGroup struct {
 }
 
 type MetricDesc struct {
-	Type prometheus.ValueType
-	Desc prometheus.Desc
+	Type   prometheus.ValueType
+	Desc   prometheus.Desc
+	Factor float64
 }
 
 type Collector struct {
-	db SQLDB
+	db *sql.DB
 	rw sync.Mutex
 
 	// internal state
@@ -39,7 +41,7 @@ type Collector struct {
 	metricGroupConfig    *MetricGroup
 }
 
-func NewCollector(db SQLDB, namespace string) *Collector {
+func NewCollector(db *sql.DB, namespace string) *Collector {
 	return &Collector{
 		db:                   db,
 		namespace:            namespace,
@@ -91,7 +93,7 @@ func (c *Collector) scrape(ch chan<- prometheus.Metric) {
 
 	errors := 0
 	c.up.Set(1)
-	c.scrapeLastTime.Set(Cast2Float64(time.Now()))
+	c.scrapeLastTime.Set(Cast2Float64(time.Now(), 1))
 	c.totalScrapes.Inc()
 
 	metrics, err := c.extractMetrics("SHOW LISTS;", c.metricGroupLists, extractKeyValue)
@@ -171,11 +173,11 @@ func (c *Collector) extractMetrics(query string, metricGroup *MetricGroup, extra
 
 type ExtractFunc func(metricGroup *MetricGroup, columns []string, columnData []interface{}) []prometheus.Metric
 
-func extractKeyValue(metricGroup *MetricGroup, columns []string, columnData []interface{}) []prometheus.Metric {
+func extractKeyValue(metricGroup *MetricGroup, _ []string, columnData []interface{}) []prometheus.Metric {
 	var result []prometheus.Metric
-	metricValue := Cast2Float64(columnData[1])
 	metricDesc := metricGroup.Metrics[Cast2string(columnData[0])]
 	if metricDesc != nil {
+		metricValue := Cast2Float64(columnData[1], metricDesc.Factor)
 		result = append(result, prometheus.MustNewConstMetric(&metricDesc.Desc, metricDesc.Type, metricValue))
 	}
 	return result
@@ -199,7 +201,7 @@ func extractWithLabels(metricGroup *MetricGroup, columns []string, columnData []
 		}
 		metricDesc := metricGroup.Metrics[colName]
 		if metricDesc != nil {
-			metricValue := Cast2Float64(columnData[i])
+			metricValue := Cast2Float64(columnData[i], metricDesc.Factor)
 			result = append(result, prometheus.MustNewConstMetric(&metricDesc.Desc, metricDesc.Type, metricValue, labelValues...))
 		}
 	}
@@ -211,8 +213,9 @@ func buildMetricGroup(descriptor MetricDescriptor) *MetricGroup {
 
 	for _, v := range descriptor.MetricProps {
 		m[v.Name] = &MetricDesc{
-			Type: v.Type,
-			Desc: *prometheus.NewDesc(fmt.Sprintf("%s_%s_%s", namespace, descriptor.Prefix, v.Name), v.Help, descriptor.Labels, nil),
+			Type:   v.Type,
+			Desc:   *prometheus.NewDesc(fmt.Sprintf("%s_%s_%s", namespace, descriptor.Prefix, v.Name), v.Help, descriptor.Labels, nil),
+			Factor: v.Factor,
 		}
 	}
 	return &MetricGroup{

@@ -1,7 +1,9 @@
 # PgBouncer metrics exporter
 
 Prometheus exporter for PgBouncer.
-Exports metrics at `8989/metrics`
+Exports metrics at `9127/metrics`
+
+Can collect compatible metrics from Odyssey.
 
 ## Build
 ```

@@ -7,6 +7,3 @@ clean:
 
 run:
 	go run pgbouncer-exporter
-
-test:
-	go test ./...
